@@ -11,7 +11,7 @@ from .protocol import authenticate
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dimensions", nargs="+", type=int, default=[8, 32, 128])
+    parser.add_argument("--dimensions", nargs="+", type=int, default=[8, 32, 64, 128])
     parser.add_argument("--runs", type=int, default=5)
     args = parser.parse_args()
     for dimension in args.dimensions:
