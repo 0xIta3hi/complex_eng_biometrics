@@ -12,6 +12,7 @@ line.
 - Beaver-triple multiplication for each squared difference.
 - TCP message and byte-count instrumentation.
 - A runnable authentication demo and a small benchmark.
+- Synthetic enrollment using 2-of-3 Shamir shares stored in one JSON file per party.
 
 The computation is `distance = sum((query[i] - template[i]) ** 2)`.
 
@@ -19,6 +20,11 @@ The initial baseline opens the final distance to the coordinator and performs
 the threshold comparison there. This protects feature vectors from any one
 honest-but-curious party, but does not yet provide private comparison or
 malicious security.
+
+The synthetic enrollment API is in `src.enrollment`. It can persist and
+reconstruct an enrolled template from any two party share files. The existing
+three-party additive MPC computation is still used after template retrieval;
+full Shamir-compatible MPC and private threshold comparison remain future work.
 
 ## Run
 
@@ -44,9 +50,11 @@ python -m src.benchmark --dimensions 8 32 128 --runs 10
 
 ## Security boundary
 
-The prototype assumes semi-honest parties and no collusion. Each party sees
-only additive shares and Beaver-round masks. All three parties can reconstruct
-the inputs if they collude. There is no malicious-security verification, TLS,
-client authentication, replay protection, or fault tolerance. The coordinator
-receives the final distance, so this is an educational MPC baseline rather than
-a deployable biometric authenticator.
+The prototype assumes semi-honest parties and no collusion. Enrollment uses
+2-of-3 Shamir shares for storage recovery, but all three parties are still
+required by the current additive MPC computation. Each party sees only its
+stored share and protocol messages. There is no malicious-security verification,
+TLS, client authentication, replay protection, or fault-tolerant MPC. The
+coordinator receives the final distance internally, while the enrollment
+authentication wrapper returns only the decision to its caller. This remains an
+educational synthetic baseline rather than a deployable biometric authenticator.

@@ -1,6 +1,14 @@
 import unittest
+import tempfile
 from unittest.mock import patch
+from pathlib import Path
 
+from src.enrollment import (
+    EnrollmentError,
+    EnrollmentStore,
+    reconstruct_shamir_secret,
+    split_shamir_secret,
+)
 from src.protocol import PRIME, authenticate, make_beaver_triples, mod, reconstruct, split_secret, split_vector
 
 
@@ -71,6 +79,77 @@ class ProtocolTests(unittest.TestCase):
         result = authenticate([2, 4], [1, 2], threshold=4)
         self.assertEqual(result["distance"], 5)
         self.assertFalse(result["accepted"])
+
+
+class EnrollmentTests(unittest.TestCase):
+    def make_store(self, temporary_directory: str) -> EnrollmentStore:
+        return EnrollmentStore([
+            Path(temporary_directory) / "party-0.json",
+            Path(temporary_directory) / "party-1.json",
+            Path(temporary_directory) / "party-2.json",
+        ])
+
+    def test_shamir_secret_reconstructs_from_any_two_points(self):
+        points = split_shamir_secret(123)
+        self.assertEqual(reconstruct_shamir_secret(points[:2]), 123)
+        self.assertEqual(reconstruct_shamir_secret(points[::2]), 123)
+        self.assertEqual(reconstruct_shamir_secret(points[1:]), 123)
+
+    def test_enrollment_persists_one_json_file_per_party(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = self.make_store(temporary_directory)
+            store.enroll("alice", [12, 5, 9])
+
+            for party_path in store.party_paths:
+                self.assertTrue(party_path.exists())
+            self.assertEqual(store.load_template("alice"), [12, 5, 9])
+
+    def test_template_load_survives_one_missing_party_file(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = self.make_store(temporary_directory)
+            store.enroll("alice", [12, 5, 9])
+            store.party_paths[1].unlink()
+
+            self.assertEqual(store.load_template("alice"), [12, 5, 9])
+
+    def test_enrollment_rejects_duplicate_and_supports_replacement(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = self.make_store(temporary_directory)
+            store.enroll("alice", [1, 2])
+            with self.assertRaises(EnrollmentError):
+                store.enroll("alice", [3, 4])
+
+            store.enroll("alice", [3, 4], replace=True)
+            self.assertEqual(store.load_template("alice"), [3, 4])
+
+    def test_delete_removes_enrolled_user(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = self.make_store(temporary_directory)
+            store.enroll("alice", [1, 2])
+            store.delete("alice")
+
+            with self.assertRaises(EnrollmentError):
+                store.load_template("alice")
+
+    def test_authentication_uses_stored_template_and_returns_decision_only(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = self.make_store(temporary_directory)
+            store.enroll("alice", [10, 20])
+            with patch("src.enrollment.run_mpc_authentication", return_value={"accepted": True, "distance": 0}) as mocked:
+                result = store.authenticate("alice", [10, 20], threshold=0)
+
+            self.assertEqual(result, {"user_id": "alice", "accepted": True})
+            mocked.assert_called_once_with([10, 20], [10, 20], 0)
+
+    def test_invalid_enrollment_input_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = self.make_store(temporary_directory)
+            with self.assertRaises(EnrollmentError):
+                store.enroll("bad user", [1, 2])
+            with self.assertRaises(EnrollmentError):
+                store.enroll("alice", [])
+            with self.assertRaises(EnrollmentError):
+                store.enroll("alice", [1, True])
 
 
 if __name__ == "__main__":
